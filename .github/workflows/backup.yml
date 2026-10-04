@@ -1,0 +1,77 @@
+name: Daily DB Backup
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # todos los días a las 03:00 UTC
+  workflow_dispatch:
+
+env:
+  # Debe coincidir con la versión mayor de tu Postgres en Railway
+  PG_VERSION: "17"
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    outputs:
+      stamp: ${{ steps.backup.outputs.stamp }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cliente PostgreSQL y GPG
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common gnupg
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y "postgresql-client-${PG_VERSION}"
+
+      - name: Ejecutar backup (dump + cifrado)
+        id: backup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: bash scripts/backup.sh
+
+      - name: Guardar backup cifrado como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ steps.backup.outputs.stamp }}
+          path: backup_${{ steps.backup.outputs.stamp }}.dump.gpg
+          retention-days: 30
+
+  restore-test:
+    needs: backup
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cliente PostgreSQL y GPG
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common gnupg
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y "postgresql-client-${PG_VERSION}"
+
+      - name: Descargar el backup recién creado
+        uses: actions/download-artifact@v4
+        with:
+          name: backup-${{ needs.backup.outputs.stamp }}
+
+      - name: Probar restauración
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: bash scripts/restore_test.sh "backup_${{ needs.backup.outputs.stamp }}.dump.gpg"
