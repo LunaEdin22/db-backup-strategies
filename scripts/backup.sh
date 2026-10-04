@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-FILE="backup_${STAMP}.dump"
+# Requiere: DATABASE_URL (URL pública de Railway) y BACKUP_PASSPHRASE.
 
-# Argumentos opcionales para S3 compatible (R2, B2). Vacío si se usa AWS S3.
-S3_ARGS=()
-if [ -n "${S3_ENDPOINT:-}" ]; then
-  S3_ARGS=(--endpoint-url "$S3_ENDPOINT")
-fi
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+DUMP="backup_${STAMP}.dump"
 
 # Backup lógico en formato custom (comprimido y restaurable por partes)
-pg_dump "$DATABASE_URL" --format=custom --no-owner --file="$FILE"
+pg_dump "$DATABASE_URL" --format=custom --no-owner --file="$DUMP"
 
-# Cifrado simétrico con GPG (la clave vive como secret)
+# Cifrado simétrico con GPG (genera ${DUMP}.gpg)
 gpg --batch --yes --pinentry-mode loopback \
-  --passphrase "$BACKUP_PASSPHRASE" -c "$FILE"
+  --passphrase "$BACKUP_PASSPHRASE" -c "$DUMP"
 
-# Subida a almacenamiento S3 compatible (AWS S3, Cloudflare R2, Backblaze B2)
-aws s3 cp "${FILE}.gpg" "s3://${BACKUP_BUCKET}/daily/${FILE}.gpg" "${S3_ARGS[@]}"
+# Borra el dump sin cifrar: solo queda el archivo .gpg
+rm -f "$DUMP"
 
-rm -f "$FILE" "${FILE}.gpg"
-echo "Backup OK: ${FILE}.gpg"
+# Expone el sello de tiempo al workflow de GitHub Actions
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  echo "stamp=${STAMP}" >> "$GITHUB_OUTPUT"
+fi
+
+echo "Backup OK: ${DUMP}.gpg"
