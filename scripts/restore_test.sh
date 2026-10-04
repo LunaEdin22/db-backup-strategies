@@ -1,26 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Requiere PGHOST, PGUSER y PGPASSWORD apuntando a un Postgres temporal.
+# Uso: bash scripts/restore_test.sh backup_XXXX.dump.gpg
+# Requiere: BACKUP_PASSPHRASE y PGHOST/PGUSER/PGPASSWORD de un Postgres temporal.
 
-S3_ARGS=()
-if [ -n "${S3_ENDPOINT:-}" ]; then
-  S3_ARGS=(--endpoint-url "$S3_ENDPOINT")
-fi
-
-LATEST=$(aws s3 ls "s3://${BACKUP_BUCKET}/daily/" "${S3_ARGS[@]}" \
-  | sort | tail -1 | awk '{print $4}')
-
-if [ -z "$LATEST" ]; then
-  echo "ERROR: no hay backups en el bucket" >&2
-  exit 1
-fi
-echo "Probando restauración de: $LATEST"
-
-aws s3 cp "s3://${BACKUP_BUCKET}/daily/${LATEST}" . "${S3_ARGS[@]}"
+FILE="${1:?Indica el archivo .dump.gpg a restaurar}"
 
 gpg --batch --yes --pinentry-mode loopback \
-  --passphrase "$BACKUP_PASSPHRASE" -o restore.dump -d "$LATEST"
+  --passphrase "$BACKUP_PASSPHRASE" -o restore.dump -d "$FILE"
 
 createdb restore_check
 pg_restore --no-owner -d restore_check restore.dump
@@ -31,4 +18,4 @@ echo "Filas restauradas: $COUNT"
 # Falla si la tabla está vacía (la restauración no sirvió de nada)
 [ "$COUNT" -gt 0 ]
 
-rm -f restore.dump "$LATEST"
+rm -f restore.dump
