@@ -7,7 +7,7 @@ on:
 
 env:
   # Debe coincidir con la versión mayor de tu Postgres en Railway
-  PG_VERSION: "17"
+  PG_VERSION: "18"
 
 jobs:
   backup:
@@ -23,6 +23,8 @@ jobs:
           sudo apt-get install -y postgresql-common gnupg
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y "postgresql-client-${PG_VERSION}"
+          # Prioriza los binarios de esta versión sobre el PostgreSQL 16 preinstalado
+          echo "/usr/lib/postgresql/${PG_VERSION}/bin" >> "$GITHUB_PATH"
 
       - name: Ejecutar backup (dump + cifrado)
         id: backup
@@ -43,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -62,6 +64,8 @@ jobs:
           sudo apt-get install -y postgresql-common gnupg
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y "postgresql-client-${PG_VERSION}"
+          # Prioriza los binarios de esta versión sobre el PostgreSQL 16 preinstalado
+          echo "/usr/lib/postgresql/${PG_VERSION}/bin" >> "$GITHUB_PATH"
 
       - name: Descargar el backup recién creado
         uses: actions/download-artifact@v4
